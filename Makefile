@@ -9,9 +9,9 @@ CONSOLE_CGI = console.cgi
 
 .PHONY: all clean prepare
 
-all: $(EXEC) $(CONSOLE_CGI)
+all: $(EXEC)
 
-$(EXEC): $(EXEC).cpp
+$(EXEC): $(EXEC).cpp socks4.hpp
 	$(CXX) $< -o $@ $(CXX_INCLUDE_PARAMS) $(CXX_LIB_PARAMS) $(CXXFLAGS)
 
 $(CONSOLE_CGI): $(CONSOLE_CGI).cpp 
