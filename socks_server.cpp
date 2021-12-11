@@ -40,23 +40,28 @@ class socks_server {
     acceptor_.async_accept(
         [this](boost::system::error_code ec, tcp::socket socket){
           if (!ec) {
-            std::cout << "New Accept" << std::endl;
             src_socket_ = std::move(socket);
             io_context_.notify_fork(boost::asio::io_context::fork_prepare);
+
             pid_t pid;
             while ((pid = fork()) < 0 ) { usleep(1000); }
+
             if (pid == 0) {  // child
               io_context_.notify_fork(boost::asio::io_context::fork_child);
               acceptor_.close();
               signal_.cancel();
-              do_read_sock4();
+              try {
+                do_read_sock4();
+              } catch (std::exception& e) {
+                src_socket_.close();
+                dest_socket_.close();
+              }
             } else {  // parent
               io_context_.notify_fork(boost::asio::io_context::fork_parent);
               src_socket_.close();
               do_accept();
             }
           } else {
-            boost::asio::detail::throw_error(ec);
             do_accept();
           }
         });
@@ -64,36 +69,52 @@ class socks_server {
 
   void do_read_sock4() {
     std::size_t length = src_socket_.read_some(boost::asio::buffer(sock4_data_, 1024));
-    if (length >= 9) {
+
+    if (length >= 9 && sock4_data_[0] == 0x4) {
       socks4::request socks_request(sock4_data_, length);
-      std::cout << socks_request.getDestHost() << std::endl;
-      std::cout << socks_request.getDestPort() << std::endl;
+      auto dest_endpoint = resolver_.resolve(socks_request.getDestHost(), socks_request.getDestPort());
+
       // TODO(libos) Check the firewall (socks.conf), and send SOCKS4 REPLY to the SOCKS client if rejected
+
       if (socks_request.getcommand() == socks4::request::command_type::connect) {
-        std::cout << "Connect mode" << std::endl;
-        auto endpoint = resolver_.resolve(socks_request.getDestHost(), socks_request.getDestPort());
-        boost::asio::connect(dest_socket_, endpoint);
+        boost::asio::connect(dest_socket_, dest_endpoint);
         socks4::reply socks_reply(socks4::reply::status_type::request_granted);
         boost::asio::write(src_socket_, socks_reply.buffers());
-        std::cout << "write successfull" << std::endl;
         do_read_from_dest();
         do_read_from_src();
+      } else if (socks_request.getcommand() == socks4::request::command_type::bind) {
+        tcp::acceptor acceptor_appserver(io_context_, tcp::endpoint(tcp::v4(), 0));
+        socks4::reply socks_reply_success(
+          socks4::reply::status_type::request_granted,
+          acceptor_appserver.local_endpoint().port(),
+          acceptor_appserver.local_endpoint().address().to_v4().to_bytes());
+
+        boost::asio::write(src_socket_, socks_reply_success.buffers());
+
+        acceptor_appserver.accept(dest_socket_);
+
+        if (dest_socket_.remote_endpoint().address().to_string() !=
+            dest_endpoint.begin()->endpoint().address().to_string()) {
+          socks4::reply socks_reply_fail(socks4::reply::status_type::request_failed);
+          boost::asio::write(src_socket_, socks_reply_fail.buffers());
+          throw std::runtime_error("Accept dest port is not as same as bind dest");
+        } else {
+          boost::asio::write(src_socket_, socks_reply_success.buffers());
+          do_read_from_dest();
+          do_read_from_src();
+        }
       } else {
-        std::cout << "Bind mode" << std::endl;
-        // TODO(libos) Bind mode
+        throw std::runtime_error("Not connect or bind mode");
       }
     } else {
-      throw std::invalid_argument("Not sock4 format");
+      throw std::runtime_error("Not sock4 format");
     }
   }
 
   void do_read_from_dest() {
-    // std::cout << "do_read_from_dest" << std::endl;
-    dest_socket_.async_read_some(boost::asio::buffer(data_from_dest_, 65536),
+    dest_socket_.async_read_some(boost::asio::buffer(data_from_dest_, MaxBufferk),
     [this](boost::system::error_code ec, std::size_t length){
       if (!ec) {
-        std::cout << "length" << length << std::endl;
-        // std::cout << "do_read_from_dest_handler" << std::endl;
         do_write_to_src(length);
       } else {
         boost::asio::detail::throw_error(ec);
@@ -102,7 +123,6 @@ class socks_server {
   }
 
   void do_write_to_src(std::size_t length) {
-    // std::cout << "do_write_to_src" << std::endl;
     boost::asio::async_write(src_socket_, boost::asio::buffer(data_from_dest_, length),
     [this](boost::system::error_code ec, std::size_t /*length*/){
       if (!ec) {
@@ -114,11 +134,9 @@ class socks_server {
   }
 
   void do_read_from_src() {
-    // std::cout << "do_read_from_src" << std::endl;
-    src_socket_.async_read_some(boost::asio::buffer(data_from_src_, 65536),
+    src_socket_.async_read_some(boost::asio::buffer(data_from_src_, MaxBufferk),
     [this](boost::system::error_code ec, std::size_t length){
       if (!ec) {
-        // std::cout << "do_read_from_src_handler" << std::endl;
         do_write_to_dest(length);
       } else {
         boost::asio::detail::throw_error(ec);
@@ -127,11 +145,9 @@ class socks_server {
   }
 
   void do_write_to_dest(std::size_t length) {
-    // std::cout << "do_write_to_dest" << std::endl;
     boost::asio::async_write(dest_socket_, boost::asio::buffer(data_from_src_, length),
     [this](boost::system::error_code ec, std::size_t /*length*/){
       if (!ec) {
-        // std::cout << "do_write_to_dest_handler" << std::endl;
         do_read_from_src();
       } else {
         boost::asio::detail::throw_error(ec);
@@ -140,8 +156,9 @@ class socks_server {
   }
 
   unsigned char sock4_data_[1024];
-  char data_from_src_[65536];
-  char data_from_dest_[65536];
+  enum { MaxBufferk = 65536 };
+  char data_from_src_[MaxBufferk];
+  char data_from_dest_[MaxBufferk];
   tcp::socket src_socket_;
   tcp::socket dest_socket_;
   tcp::acceptor acceptor_;

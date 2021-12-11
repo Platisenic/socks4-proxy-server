@@ -86,6 +86,14 @@ class reply{
       address_(std::array<unsigned char, 4> {0}) {
       }
 
+  reply(unsigned char status, unsigned short port, std::array<unsigned char, 4> address)
+    : null_byte_(0),
+      status_(status),
+      port_high_byte_((port >> 8) & 0xff),
+      port_low_byte_(port & 0xff),
+      address_(address) {
+      }
+
   std::array<boost::asio::mutable_buffer, 5> buffers() {
     return{
       {
