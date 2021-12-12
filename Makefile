@@ -1,5 +1,5 @@
 CXX=g++
-CXXFLAGS=-std=c++11 -Wall -pedantic -pthread -lboost_system
+CXXFLAGS=-std=c++11 -Wall -pedantic -pthread -lboost_system -lboost_regex
 CXX_INCLUDE_DIRS=/usr/local/include
 CXX_INCLUDE_PARAMS=$(addprefix -I , $(CXX_INCLUDE_DIRS))
 CXX_LIB_DIRS=/usr/local/lib

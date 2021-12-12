@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <boost/asio.hpp>
 #include <boost/algorithm/string.hpp>
-#include <regex>
+#include <boost/regex.hpp>
 #include "socks4.hpp"
 
 using boost::asio::ip::tcp;
@@ -144,16 +144,14 @@ class socks_server {
         boost::replace_all(split_result[2], "\r", "");
         boost::replace_all(split_result[2], ".", "\\.");
         boost::replace_all(split_result[2], "*", "\\d{1,3}");
-        split_result[2].insert(split_result[2].begin(), '^');
-        split_result[2].push_back('$');
-        // std::cout << split_result[2] << std::endl;
-        // std::cout << "ASCII: ";
-        // for (size_t i=0; i < split_result[2].size(); i++) {
-        //   std::cout << static_cast<int> (split_result[2][i]) << " ";
-        // }
-        // std::cout << std::endl;
-        std::regex pattern(split_result[2]);
-        if (split_result[1] == mode && std::regex_match(dest_ip, pattern)) return true;
+        std::cout << split_result[2] << std::endl;
+        std::cout << "ASCII: ";
+        for (size_t i=0; i < split_result[2].size(); i++) {
+          std::cout << static_cast<int> (split_result[2][i]) << " ";
+        }
+        std::cout << std::endl;
+        boost::regex expr(split_result[2].c_str());
+        if (split_result[1] == mode && boost::regex_match(dest_ip.c_str(), expr)) return true;
       }
     }
 
