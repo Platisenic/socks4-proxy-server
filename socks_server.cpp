@@ -74,36 +74,31 @@ class socks_server {
   }
 
   void do_read_sock4() {
-    std::size_t length = src_socket_.read_some(boost::asio::buffer(sock4_data_, 1024));
+    std::size_t length = src_socket_.read_some(boost::asio::buffer(sock4_data_, MaxSocksMsgk));
 
     if (length < 9 || sock4_data_[0] != socks4::version) {
       throw std::runtime_error("Not sock4 format");
     }
 
     socks4::request socks_request(sock4_data_, length);
-    auto dest_endpoint = resolver_.resolve(socks_request.getDestHost(), socks_request.getDestPort());
-    std::cout << "<S_IP>: " << src_socket_.remote_endpoint().address().to_string() << std::endl;
-    std::cout << "<S_PORT>: " << src_socket_.remote_endpoint().port() << std::endl;
-    std::cout << "<D_IP>: " << dest_endpoint.begin()->endpoint().address().to_string() << std::endl;
-    std::cout << "<D_PORT>: " << dest_endpoint.begin()->endpoint().port() << std::endl;
-    std::cout << "<Command>: " << socks_request.getcommandstr() << std::endl;
+    dest_endpoint_ = resolver_.resolve(socks_request.getDestHost(), socks_request.getDestPort());
 
     if ((socks_request.getcommand() != socks4::request::command_type::connect) &&
         (socks_request.getcommand() != socks4::request::command_type::bind)) {
-          std::cout << "<Reply>: Reject" << std::endl << std::endl;
+          printMsg(socks_request.getcommandstr(), false);
           throw std::runtime_error("Not connect or bind mode");
         }
 
-    if (!check_firewall(socks_request.getcommandchar(), dest_endpoint.begin()->endpoint().address().to_string())) {
-      std::cout << "<Reply>: Reject" << std::endl << std::endl;
+    if (!check_firewall(socks_request.getcommandchar(), dest_endpoint_.begin()->endpoint().address().to_string())) {
+      printMsg(socks_request.getcommandstr(), false);
       throw std::runtime_error("block by firewall");
     }
 
     if (socks_request.getcommand() == socks4::request::command_type::connect) {
-      boost::asio::connect(dest_socket_, dest_endpoint);
+      boost::asio::connect(dest_socket_, dest_endpoint_);
       socks4::reply socks_reply(socks4::reply::status_type::request_granted);
       boost::asio::write(src_socket_, socks_reply.buffers());
-      std::cout << "<Reply>: Accept" << std::endl << std::endl;
+      printMsg(socks_request.getcommandstr(), true);
       do_read_from_dest();
       do_read_from_src();
     } else /* socks4::request::command_type::bind */ {
@@ -118,14 +113,14 @@ class socks_server {
       acceptor_appserver.accept(dest_socket_);
 
       if (dest_socket_.remote_endpoint().address().to_string() !=
-          dest_endpoint.begin()->endpoint().address().to_string()) {
+          dest_endpoint_.begin()->endpoint().address().to_string()) {
         socks4::reply socks_reply_fail(socks4::reply::status_type::request_failed);
         boost::asio::write(src_socket_, socks_reply_fail.buffers());
-        std::cout << "<Reply>: Reject" << std::endl << std::endl;
+        printMsg(socks_request.getcommandstr(), false);
         throw std::runtime_error("Accept dest port is not as same as bind dest");
       } else {
         boost::asio::write(src_socket_, socks_reply_success.buffers());
-        std::cout << "<Reply>: Accept" << std::endl << std::endl;
+        printMsg(socks_request.getcommandstr(), true);
         do_read_from_dest();
         do_read_from_src();
       }
@@ -144,18 +139,26 @@ class socks_server {
         boost::replace_all(split_result[2], "\r", "");
         boost::replace_all(split_result[2], ".", "\\.");
         boost::replace_all(split_result[2], "*", "\\d{1,3}");
-        std::cout << split_result[2] << std::endl;
-        std::cout << "ASCII: ";
-        for (size_t i=0; i < split_result[2].size(); i++) {
-          std::cout << static_cast<int> (split_result[2][i]) << " ";
-        }
-        std::cout << std::endl;
         boost::regex expr(split_result[2].c_str());
         if (split_result[1] == mode && boost::regex_match(dest_ip.c_str(), expr)) return true;
       }
     }
 
     return false;
+  }
+
+  void printMsg(std::string commandstr, bool ACorRJ) {
+    std::cout << "<S_IP>: " << src_socket_.remote_endpoint().address().to_string()
+              << "\n<S_PORT>: " << src_socket_.remote_endpoint().port()
+              << "\n<D_IP>: " << dest_endpoint_.begin()->endpoint().address().to_string()
+              << "\n<D_PORT>: " << dest_endpoint_.begin()->endpoint().port()
+              << "\n<Command>: " << commandstr;
+    if (ACorRJ) {
+      std::cout << "\n<Reply>: Accept\n\n";
+    } else {
+      std::cout << "\n<Reply>: Reject\n\n";
+    }
+    std::cout.flush();
   }
 
   void do_read_from_dest() {
@@ -202,8 +205,8 @@ class socks_server {
     });
   }
 
-  unsigned char sock4_data_[1024];
-  enum { MaxBufferk = 65536 };
+  enum { MaxBufferk = 65536, MaxSocksMsgk = 1024 };
+  unsigned char sock4_data_[MaxSocksMsgk];
   char data_from_src_[MaxBufferk];
   char data_from_dest_[MaxBufferk];
   tcp::socket src_socket_;
@@ -212,6 +215,7 @@ class socks_server {
   tcp::resolver resolver_;
   boost::asio::signal_set signal_;
   boost::asio::io_context& io_context_;
+  tcp::resolver::results_type dest_endpoint_;
 };
 
 int main(int argc, char* argv[]) {

@@ -26,7 +26,7 @@ class request{
       null_byte_(0) {
   }
 
-  request(unsigned char sock4_data[1024], size_t length) {
+  request(unsigned char* sock4_data, size_t length) {
     version_ = sock4_data[0];
     command_ = sock4_data[1];
     port_high_byte_ = sock4_data[2];
