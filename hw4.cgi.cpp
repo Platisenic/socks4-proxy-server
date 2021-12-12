@@ -148,7 +148,6 @@ int main() {
   try {
     boost::asio::io_context io_context;
     std::string query_string(getenv("QUERY_STRING"));
-    // std::string query_string = "h0=140.113.213.44&p0=5556&f0=t1.txt&sh=140.113.213.44&sp=3333";
     std::stringstream ss(query_string);
     std::string parsed_string;
     connection_info conn_infos[5];

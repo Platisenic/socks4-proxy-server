@@ -31,7 +31,7 @@ run_http_server: $(HTTP_SERVER) $(CONSOLE_CGI)
 	./$(HTTP_SERVER) 3600
 
 run_console_cgi: $(CONSOLE_CGI)
-	./$(CONSOLE_CGI)
+	export QUERY_STRING="h0=140.113.213.44&p0=5556&f0=t1.txt&sh=140.113.213.44&sp=3333" && ./$(CONSOLE_CGI)
 
 run_np_single:
 	rm -rf working_dir

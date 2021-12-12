@@ -78,6 +78,16 @@ class request{
     return command_;
   }
 
+  std::string getcommandstr() {
+    if (command_ == command_type::connect) return "CONNECT";
+    return "BIND";
+  }
+
+  std::string getcommandchar() {
+    if (command_ == command_type::connect) return "c";
+    return "b";
+  }
+
   bool check_address_valid() {
     return !(address_[0] == 0 && address_[1] == 0 && address_[2] == 0);
   }
