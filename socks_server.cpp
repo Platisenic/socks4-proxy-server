@@ -73,16 +73,22 @@ class socks_server {
     if (length >= 9 && sock4_data_[0] == 0x4) {
       socks4::request socks_request(sock4_data_, length);
       auto dest_endpoint = resolver_.resolve(socks_request.getDestHost(), socks_request.getDestPort());
+      std::cout << "<S_IP>: " << src_socket_.remote_endpoint().address().to_string() << std::endl;
+      std::cout << "<S_PORT>: " << src_socket_.remote_endpoint().port() << std::endl;
+      std::cout << "<D_IP>: " << dest_endpoint.begin()->endpoint().address().to_string() << std::endl;
+      std::cout << "<D_PORT>: " << dest_endpoint.begin()->endpoint().port() << std::endl;
 
       // TODO(libos) Check the firewall (socks.conf), and send SOCKS4 REPLY to the SOCKS client if rejected
 
       if (socks_request.getcommand() == socks4::request::command_type::connect) {
+        std::cout << "<Command>: CONNECT" << std::endl;
         boost::asio::connect(dest_socket_, dest_endpoint);
         socks4::reply socks_reply(socks4::reply::status_type::request_granted);
         boost::asio::write(src_socket_, socks_reply.buffers());
         do_read_from_dest();
         do_read_from_src();
       } else if (socks_request.getcommand() == socks4::request::command_type::bind) {
+        std::cout << "<Command>: BIND" << std::endl;
         tcp::acceptor acceptor_appserver(io_context_, tcp::endpoint(tcp::v4(), 0));
         socks4::reply socks_reply_success(
           socks4::reply::status_type::request_granted,

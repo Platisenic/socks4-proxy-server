@@ -15,7 +15,7 @@ test_case_menu = ''.join([f'<option value="{test_case}">{test_case}</option>' fo
 
 DOMAIN = 'cs.nctu.edu.tw'
 hosts = [f'nplinux{i + 1}' for i in range(5)]
-host_menu = ''.join([f'<option value="{host}.{DOMAIN}">{host}</option>' for host in hosts])
+host_menu = ''.join([f'<option value="140.113.213.44">{host}</option>' for host in hosts])
 
 print('Content-type: text/html', end='\r\n\r\n')
 
