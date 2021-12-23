@@ -59,6 +59,7 @@ class socks_server {
               try {
                 do_read_sock4();
               } catch (std::exception& e) {
+                // std::cerr << "Exception: " << e.what() << "\n";
                 src_socket_.close();
                 dest_socket_.close();
               }
@@ -74,33 +75,53 @@ class socks_server {
   }
 
   void do_read_sock4() {
-    std::size_t length = src_socket_.read_some(boost::asio::buffer(sock4_data_, MaxSocksMsgk));
+    boost::system::error_code ec;
+    socks4::reply socks_reply_fail(socks4::reply::status_type::request_failed);
+    socks4::reply socks_reply_connect_granted(socks4::reply::status_type::request_granted);
+
+    std::size_t length = src_socket_.read_some(boost::asio::buffer(sock4_data_, MaxSocksMsgk), ec);
+    if (ec) {
+      boost::asio::detail::throw_error(ec);
+    }
 
     if (length < 9 || sock4_data_[0] != socks4::version) {
       throw std::runtime_error("Not sock4 format");
     }
 
     socks4::request socks_request(sock4_data_, length);
-    dest_endpoint_ = resolver_.resolve(socks_request.getDestHost(), socks_request.getDestPort());
 
     if ((socks_request.getcommand() != socks4::request::command_type::connect) &&
         (socks_request.getcommand() != socks4::request::command_type::bind)) {
-          printMsg(socks_request.getcommandstr(), false);
-          throw std::runtime_error("Not connect or bind mode");
-        }
+      boost::asio::write(src_socket_, socks_reply_fail.buffers());
+      throw std::runtime_error("Not connect or bind mode");
+    }
+
+    dest_endpoint_ = resolver_.resolve(socks_request.getDestHost(), socks_request.getDestPort(), ec);
+
+    if (ec) {
+      boost::asio::write(src_socket_, socks_reply_fail.buffers());
+      boost::asio::detail::throw_error(ec);
+    }
 
     if (!check_firewall(socks_request.getcommandchar(), dest_endpoint_.begin()->endpoint().address().to_string())) {
       printMsg(socks_request.getcommandstr(), false);
+      boost::asio::write(src_socket_, socks_reply_fail.buffers());
       throw std::runtime_error("block by firewall");
     }
 
     if (socks_request.getcommand() == socks4::request::command_type::connect) {
-      boost::asio::connect(dest_socket_, dest_endpoint_);
-      socks4::reply socks_reply(socks4::reply::status_type::request_granted);
-      boost::asio::write(src_socket_, socks_reply.buffers());
+      boost::asio::connect(dest_socket_, dest_endpoint_, ec);
+      if (ec) {
+        printMsg(socks_request.getcommandstr(), false);
+        boost::asio::write(src_socket_, socks_reply_fail.buffers());
+        boost::asio::detail::throw_error(ec);
+      }
+
+      boost::asio::write(src_socket_, socks_reply_connect_granted.buffers());
       printMsg(socks_request.getcommandstr(), true);
       do_read_from_dest();
       do_read_from_src();
+
     } else /* socks4::request::command_type::bind */ {
       tcp::acceptor acceptor_appserver(io_context_, tcp::endpoint(tcp::v4(), 0));
       socks4::reply socks_reply_success(
@@ -110,20 +131,26 @@ class socks_server {
 
       boost::asio::write(src_socket_, socks_reply_success.buffers());
 
-      acceptor_appserver.accept(dest_socket_);
+      acceptor_appserver.accept(dest_socket_, ec);
+
+      if (ec) {
+        printMsg(socks_request.getcommandstr(), false);
+        boost::asio::write(src_socket_, socks_reply_fail.buffers());
+        boost::asio::detail::throw_error(ec);
+      }
 
       if (dest_socket_.remote_endpoint().address().to_string() !=
           dest_endpoint_.begin()->endpoint().address().to_string()) {
-        socks4::reply socks_reply_fail(socks4::reply::status_type::request_failed);
+        printMsg(socks_request.getcommandstr(), false); 
         boost::asio::write(src_socket_, socks_reply_fail.buffers());
-        printMsg(socks_request.getcommandstr(), false);
         throw std::runtime_error("Accept dest port is not as same as bind dest");
-      } else {
-        boost::asio::write(src_socket_, socks_reply_success.buffers());
-        printMsg(socks_request.getcommandstr(), true);
-        do_read_from_dest();
-        do_read_from_src();
       }
+
+      printMsg(socks_request.getcommandstr(), true);
+      boost::asio::write(src_socket_, socks_reply_success.buffers());
+      do_read_from_dest();
+      do_read_from_src();
+      
     }
   }
 
